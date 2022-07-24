@@ -1,6 +1,6 @@
 package com.hexagonteam.login
 
-import com.hexagonteam.constants.UrlConstants.LOGIN_PATH
+import com.hexagonteam.constants.Paths.LOGIN_PATH
 import com.hexagonteam.database.tokens.TokenDto
 import com.hexagonteam.database.tokens.Tokens
 import com.hexagonteam.database.users.Users
@@ -18,21 +18,22 @@ fun Application.configureLoginRouting() {
             val receive = call.receive<LoginReceiveRemote>()
             val user = Users.getUser(receive.login)
 
-            if (user == null) {
-                call.respond(HttpStatusCode.BadRequest, message = "User not found")
-            } else {
-                if (user.password == receive.password) {
+            when {
+                user == null -> call.respond(HttpStatusCode.BadRequest, message = "User not found")
+                user.password == receive.password -> {
                     val token = generateToken()
                     val tokenDto = TokenDto(
-                        rowId = UUID.randomUUID().toString(), // TODO how to replace it with autogenerate field?
+                        // TODO how to replace it with autogenerate field?
+                        //  https://github.com/hexagon-team/it-interview-backend/issues/4
+                        rowId = UUID.randomUUID().toString(),
                         login = receive.login,
                         token = token
                     )
                     Tokens.insert(tokenDto)
 
                     call.respond(LoginResponseRemote(token))
-
-                } else call.respond(HttpStatusCode.BadRequest, message = "Invalid password")
+                }
+                else -> call.respond(HttpStatusCode.BadRequest, message = "Invalid password")
             }
         }
     }
