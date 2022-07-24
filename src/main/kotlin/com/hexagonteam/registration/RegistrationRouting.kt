@@ -1,18 +1,15 @@
 package com.hexagonteam.registration
 
 import com.hexagonteam.constants.Paths.REGISTRATION_PATH
-import com.hexagonteam.constants.Urls
 import com.hexagonteam.database.tokens.TokenDto
 import com.hexagonteam.database.tokens.Tokens
-import com.hexagonteam.database.users.UserDto
-import com.hexagonteam.database.users.Users
+import com.hexagonteam.database.users.*
 import com.hexagonteam.utils.generateToken
 import io.ktor.http.*
 import io.ktor.server.application.*
 import io.ktor.server.request.*
 import io.ktor.server.response.*
 import io.ktor.server.routing.*
-import org.jetbrains.exposed.exceptions.ExposedSQLException
 import java.util.*
 
 fun Application.configureRegistrationRouting() {
@@ -20,11 +17,13 @@ fun Application.configureRegistrationRouting() {
         post(path = REGISTRATION_PATH) {
             val receive = call.receive<RegistrationReceiveRemote>()
 
+            val user = Users.getUser(receive.login)
+
             when {
                 receive.isValidEmail().not() -> {
                     call.respond(HttpStatusCode.BadRequest, message = "Invalid email")
                 }
-                Users.getUser(receive.login) == null -> {
+                user.error is UserNotFoundError -> {
                     val token = generateToken()
                     val userDto = UserDto(
                         login = receive.login,
@@ -40,18 +39,23 @@ fun Application.configureRegistrationRouting() {
                         token = token
                     )
 
-                    try {
-                        Users.insert(userDto)
-                    } catch (exception: ExposedSQLException) {
-                        exception.printStackTrace()
-                        call.respond(HttpStatusCode.Conflict, message = exception.toString())
+
+                    val insertResult = Users.insert(userDto)
+
+                    insertResult.error?.let { error ->
+                        if (error is UserAlreadyExistsError) {
+                            call.respond(HttpStatusCode.Conflict, message = error.message)
+                        }
                     }
 
                     Tokens.insert(tokenDto)
 
                     call.respond(RegistrationResponseRemote(token))
                 }
-                else -> call.respond(HttpStatusCode.Conflict, message = "User already exists")
+                user.error is DbHaveDuplicatesError -> {
+                    call.respond(HttpStatusCode.InternalServerError)
+                }
+                else -> call.respond(HttpStatusCode.Conflict, UserAlreadyExistsError().message)
             }
         }
     }

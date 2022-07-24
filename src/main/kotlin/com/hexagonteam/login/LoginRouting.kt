@@ -3,6 +3,8 @@ package com.hexagonteam.login
 import com.hexagonteam.constants.Paths.LOGIN_PATH
 import com.hexagonteam.database.tokens.TokenDto
 import com.hexagonteam.database.tokens.Tokens
+import com.hexagonteam.database.users.DbHaveDuplicatesError
+import com.hexagonteam.database.users.UserNotFoundError
 import com.hexagonteam.database.users.Users
 import com.hexagonteam.utils.generateToken
 import io.ktor.http.*
@@ -16,11 +18,16 @@ fun Application.configureLoginRouting() {
     routing {
         post(path = LOGIN_PATH) {
             val receive = call.receive<LoginReceiveRemote>()
-            val user = Users.getUser(receive.login)
+            val result = Users.getUser(receive.login)
 
             when {
-                user == null -> call.respond(HttpStatusCode.BadRequest, message = "User not found")
-                user.password == receive.password -> {
+                result.error is UserNotFoundError -> {
+                    call.respond(HttpStatusCode.BadRequest, message = result.error.message)
+                }
+                result.error is DbHaveDuplicatesError -> {
+                    call.respond(HttpStatusCode.InternalServerError)
+                }
+                result.dto?.password == receive.password -> {
                     val token = generateToken()
                     val tokenDto = TokenDto(
                         // TODO how to replace it with autogenerate field?
